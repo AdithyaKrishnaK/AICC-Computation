@@ -1,51 +1,107 @@
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy import optimize
-import math
 import pyromat as pm
 
-def uchange(r,p,T0,t):
-    pm.config['unit_matter'] = 'kmol'
-    o2 = pm.get('ig.O2')
-    n2 = pm.get('ig.N2')
-    h2 = pm.get('ig.H2')
-    h2o = pm.get('ig.H2O')
+def uchange(r,p,t,n=0):
+  pm.config['unit_matter'] = 'kmol'
+  data = {}
+  R = 8.314
+  if n==0:
+    n_r = r['P']*r['V']/(R*r['T'])
+  else:
+    n_r = n
+  for key in r.keys():
+    if key not in ['P','T','V','ID']:
+      data[key] = pm.get('ig.'+key)
+  for key in p.keys():
+    if key not in ['P','T','V','ID'] and data.get(key) == None:
+      data[key] = pm.get('ig.'+key)
+  val = 0
+  for key in r.keys():
+    if key not in ['P','T','V','ID']:
+      val -= data[key].e(T=r['T'])*r[key]*n_r
+  
+  for key in p.keys():
+    if key not in ['P','T','V','ID']:
+      val += data[key].e(T=t)*p[key]
+  return val
 
-    val = p['H2O']*h2o.e(T=t) + p['O2']*o2.e(T=t) + p['N2']*n2.e(T=t) + p['H2']*h2.e(T=t) - r['H2']*h2.e(T=T0) - r['O2']*o2.e(T=T0) - r['N2']*n2.e(T=T0) 
-    return val
+
+def findEqT(r,p):
+  a = r['T']
+  b = 4000
+  while abs((b-a)/b)>0.00000001:
+    c = (b+a)/2
+    if uchange(r,p,c)*uchange(r,p,b)<0:
+      a = c
+    else:
+      b = c
+  
+  return a
 
 
-def findEqT(r,p,T0):
-    a = T0
-    b = 10000
-    while abs((b-a)/b)>0.00000001:
-        c = (b+a)/2
-        if uchange(r,p,T0,c)<0:
-            a = c
-        else:
-            b = c
-    
-    return a
 
-def computeAICC(r):
-    P0 = r['P']
-    T0 = r['T']
-    V = r['V']
-    p = {}
-    if r['H2']/2>r['O2']:
-        p['H2O'] = r['O2']*2
-        p['H2']= r['H2']-r['O2']*2
+def computeProd(r,data):
+  p = {}
+  R = 8.314
+  n_r = r['P']*r['V']/(R*r['T'])
+
+  if r.get('H2') != None:
+    h_key = 'H2'
+  else:
+    h_key = 'D2' 
+
+  if r.get('CO') == None:
+    r['CO'] = 0
+
+  x = r[h_key] + data['F']*r['CO']
+  
+  x_d = 0
+  for key in r.keys():
+    if key not in ['P','T','V','ID','H2','CO','O2','D2']:
+      x_d += r[key]
+
+  if x>=data['x_c'] and r['O2']>=data['x_o2'] and x_d<=data['x_d']:
+    if (r[h_key]+r['CO'])/2>r['O2']:
+        k = 2*r['O2']/(r[h_key]+r['CO']) 
+        p[h_key+'O'] = k*r[h_key]*n_r
+        p['CO2'] = k*r['CO']*n_r
+        p['CO'] = (r['CO']-k*r['CO'])*n_r
+        p[h_key]= (r[h_key]-k*r[h_key])*n_r
+        if p[h_key] < 0 or p['CO']<0:
+          print("Error")
         p['O2'] = 0
     else:
-        p['H2O'] = r['H2']
-        p['H2']= 0
-        p['O2'] = r['O2'] - r['H2']/2
+        p[h_key+'O'] = r[h_key]*n_r
+        p[h_key]= 0
+        p['CO'] = 0
+        p['CO2'] = r['CO']*n_r
+        p['O2'] = (r['O2'] - (r[h_key]+r['CO'])/2)*n_r
+  else:
+    for key in r.keys():
+        if key not in ['ID','P','V','T']:
+            p[key] = n_r*r[key]
+    return p
+  
+  for key in r.keys():
+    if key not in ['H2','D2','O2','D2O','H2O','ID','P','V','T']:
+      p[key] = n_r*r[key]
+  return p
 
-    p['n2'] = r['n2']
-    n_p = p['H2']+p['O2']+p['H2O']+p['N2']
+def computeAICC(r, data = {'F':0.541,'x_c':0.07,'x_o2':0.05,'x_d':0.55}):
+  
+  if r.get('H2') == None and r.get('D2') == None:
+    print("No hydrogen or deutrium")
+    return
 
-    R = 8.314
+  R = 8.314
+  p = computeProd(r,data)
 
-    T = findEqT(r,p,T0)
-    P_AICC = n_p*R*T/V
-    return [T,P_AICC]
+  n_p=0
+  for key in p.keys():
+    if key not in ['P','T','V','ID']:
+      n_p += p[key]
+
+  T = findEqT(r,p)
+  P_AICC = n_p*R*T/r['V']
+  p['T'] = T
+  p['P'] = P_AICC
+  return p
