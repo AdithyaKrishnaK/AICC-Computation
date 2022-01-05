@@ -1,4 +1,7 @@
+from typing import Union
 import pyromat as pm
+
+not_composition = ['P','V','T','ID']
 
 def uchange(r,p,t,n=0):
   pm.config['unit_matter'] = 'kmol'
@@ -9,18 +12,18 @@ def uchange(r,p,t,n=0):
   else:
     n_r = n
   for key in r.keys():
-    if key not in ['P','T','V','ID']:
+    if key not in not_composition:
       data[key] = pm.get('ig.'+key)
   for key in p.keys():
-    if key not in ['P','T','V','ID'] and data.get(key) == None:
+    if key not in not_composition and data.get(key) == None:
       data[key] = pm.get('ig.'+key)
   val = 0
   for key in r.keys():
-    if key not in ['P','T','V','ID']:
+    if key not in not_composition:
       val -= data[key].e(T=r['T'])*r[key]*n_r
   
   for key in p.keys():
-    if key not in ['P','T','V','ID']:
+    if key not in not_composition:
       val += data[key].e(T=t)*p[key]
   return val
 
@@ -56,8 +59,11 @@ def computeProd(r,data):
   
   x_d = 0
   for key in r.keys():
-    if key not in ['P','T','V','ID','H2','CO','O2','D2']:
+    if key in ['CO2','D2O','H2O']:
       x_d += r[key]
+
+  if r.get('N2') != None and r.get('O2')!= None:
+      x_d += 0.79*(r['N2']-3.774*r['O2'])
 
   if x>=data['x_c'] and r['O2']>=data['x_o2'] and x_d<=data['x_d']:
     if (r[h_key]+r['CO'])/2>r['O2']:
@@ -77,12 +83,12 @@ def computeProd(r,data):
         p['O2'] = (r['O2'] - (r[h_key]+r['CO'])/2)*n_r
   else:
     for key in r.keys():
-        if key not in ['ID','P','V','T']:
+        if key not in not_composition:
             p[key] = n_r*r[key]
     return p
   
   for key in r.keys():
-    if key not in ['H2','D2','O2','D2O','H2O','ID','P','V','T']:
+    if key not in Union(['H2','D2','O2','D2O','H2O','CO','CO2'],not_composition):
       p[key] = n_r*r[key]
   return p
 
@@ -97,7 +103,7 @@ def computeAICC(r, data = {'F':0.541,'x_c':0.07,'x_o2':0.05,'x_d':0.55}):
 
   n_p=0
   for key in p.keys():
-    if key not in ['P','T','V','ID']:
+    if key not in not_composition:
       n_p += p[key]
 
   T = findEqT(r,p)

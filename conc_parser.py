@@ -5,16 +5,19 @@ import time
 from AICC import computeAICC, uchange
 import pyromat as pm
 
+not_composition = ['P','V','T','ID']
+ignore_compartments = ['SCONTAIN','ENVIRON']
+
 def computeU(r,n_r,t,enthalpy = 0):
   pm.config['unit_matter'] = 'kmol'
   data = {}
   R = 8.314
   for key in r.keys():
-    if key not in ['P','T','V','ID']:
+    if key not in not_composition:
       data[key] = pm.get('ig.'+key)
   val = 0
   for key in r.keys():
-    if key not in ['P','T','V','ID']:
+    if key not in not_composition:
       val += data[key].e(T=t)*r[key]*n_r
   return val - enthalpy
 
@@ -22,9 +25,9 @@ def homogenise(containment):
     total = {}
     enthalpy = 0
     for space in containment:
-            if space.get('ID').upper() not in ['SCONTAIN','ENVIRON']:
+            if space.get('ID').upper() not in ignore_compartments:
                 for key in space.keys():
-                    if key not in ['P','T','V','ID']:
+                    if key not in not_composition:
                         if total.get(key) != None:
                             total[key] = total[key] + space[key]*space['P']*space['V']/(8.314*space['T'])
                         else:
@@ -140,7 +143,7 @@ def validate(containment):
             flg = False
         total_x = 0
         for key in space.keys():
-            if key not in ['ID','T','P','V']:
+            if key not in not_composition:
                 total_x += space.get(key)
         
         if total_x>1+tol:
@@ -171,11 +174,11 @@ def process_data(CompPath,TempPath,VolPath):
         for space in containment:
             tot = 0
             for key in space.keys():
-                if key not in ['ID','V','P','T']:
+                if key not in not_composition:
                     tot += space[key]
             
             for key in space.keys():
-                if key not in ['ID','V','P','T']:
+                if key not in not_composition:
                     space[key] /= tot
         
         if not validate(containment):
@@ -187,7 +190,7 @@ def process_data(CompPath,TempPath,VolPath):
         print("Parsing",b-a)
         res = {"TIME":vals[0]}
         for space in containment:
-            if space.get('ID').upper() not in ['SCONTAIN','ENVIRON']:
+            if space.get('ID').upper() not in ignore_compartments:
                 ans = computeAICC(space)
                 res[space.get('ID')+'_T'] = ans['T']
                 res[space.get('ID')+'_P'] = ans['P']
