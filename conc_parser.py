@@ -152,13 +152,15 @@ def process_data(CompPath,TempPath,VolPath):
     columns = file.readline().split()
     data = [] 
     for line in file:
-        a= time.time()
-        vals = line.split()
-        for i in range(len(vals)):
-            vals[i] = float(vals[i])
-        containment = parse(columns,vals)
-        add_temp(containment,TempPath,vals[0])
-        add_vol(containment,VolPath)
+        try:
+            vals = line.split()
+            for i in range(len(vals)):
+                vals[i] = float(vals[i])
+            containment = parse(columns,vals)
+            add_temp(containment,TempPath,vals[0])
+            add_vol(containment,VolPath)
+        except:
+            print("Error in parsing data")
         
         for space in containment:
             tot = 0
@@ -175,23 +177,24 @@ def process_data(CompPath,TempPath,VolPath):
             print("Please verify the data")
             return
         
-        b =time.time()
-        #print("Parsing",b-a)
         res = {"TIME":vals[0]}
         for space in containment:
             if space.get('ID').upper() not in ignore_compartments:
-                ans = computeAICC(space)
-                res[space.get('ID')+'_T'] = float(ans['T'])
-                res[space.get('ID')+'_P'] = float(ans['P'])
+                try:
+                    ans = computeAICC(space)
+                    res[space.get('ID')+'_T'] = float(ans['T'])
+                    res[space.get('ID')+'_P'] = float(ans['P'])
+                except:
+                    print("Error in calculating AICC pressure")
         
-        
-        ans = homogenise(containment)
-        res['Homogenised'+'_T'] = float(ans['T'])
-        res['Homogenised'+'_P'] = float(ans['P'])
+        try:
+            ans = homogenise(containment)
+            res['Homogenised'+'_T'] = float(ans['T'])
+            res['Homogenised'+'_P'] = float(ans['P'])
+        except:
+            print("Error in AICC pressure homogeneous mixture")
         data.append(res)
         
-        a =time.time()
-        #print("Proccessing",a-b)
 
     result = pd.DataFrame.from_dict(data)
     result.to_csv('result.csv')
