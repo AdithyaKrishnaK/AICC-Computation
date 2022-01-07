@@ -1,14 +1,13 @@
+from functools import partial
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 import time
-from AICC import computeAICC, uchange
+from AICC import computeAICC, findEqT
 import pyromat as pm
 
 not_composition = ['P','V','T','ID']
 ignore_compartments = ['SCONTAIN','ENVIRON']
 
-def computeU(r,n_r,t,enthalpy = 0):
+def computeU(r,n_r,t):
   pm.config['unit_matter'] = 'kmol'
   data = {}
   R = 8.314
@@ -19,7 +18,7 @@ def computeU(r,n_r,t,enthalpy = 0):
   for key in r.keys():
     if key not in not_composition:
       val += data[key].e(T=t)*r[key]*n_r
-  return val - enthalpy
+  return val
 
 def homogenise(containment):
     total = {}
@@ -46,25 +45,15 @@ def homogenise(containment):
         if key != 'V':
             total[key] /= n_tot
 
-    a = 0
-    b = 1000
-    while abs((b-a)/b)>0.00000001:
-        c = (b+a)/2
-        if float(computeU(total,n_tot,c,float(enthalpy)))*float(computeU(total,n_tot,b,float(enthalpy)))<0:
-            a = c
-        else:
-            b = c
-    
-    # a = np.linspace(100,10000,num=4000)
-    
-    # plt.plot(a,computeU(total,n_tot,a,float(enthalpy)))
-    # plt.show()
-    if float(computeU(total,n_tot,a,float(enthalpy))) > 0.000001:
-        print("Not converged")
-        exit()
-    total['T'] = a
+    fun = partial(energy_balance,total,n_tot,enthalpy)
+    tf = findEqT(fun,315)
+
+    total['T'] = tf
     total['P'] = n_tot*total['T']*8.314/total['V']
     return computeAICC(total)
+
+def energy_balance(total,n,enthalpy,t):
+    return computeU(total,n,t) - enthalpy
 
 def search_by_id(listName,spaceID):
     for i in listName:
@@ -161,7 +150,7 @@ def validate(containment):
 def process_data(CompPath,TempPath,VolPath):
     file = open(CompPath,'r')
     columns = file.readline().split()
-    data = []
+    data = [] 
     for line in file:
         a= time.time()
         vals = line.split()
@@ -187,22 +176,22 @@ def process_data(CompPath,TempPath,VolPath):
             return
         
         b =time.time()
-        print("Parsing",b-a)
+        #print("Parsing",b-a)
         res = {"TIME":vals[0]}
         for space in containment:
             if space.get('ID').upper() not in ignore_compartments:
                 ans = computeAICC(space)
-                res[space.get('ID')+'_T'] = ans['T']
-                res[space.get('ID')+'_P'] = ans['P']
+                res[space.get('ID')+'_T'] = float(ans['T'])
+                res[space.get('ID')+'_P'] = float(ans['P'])
         
         
         ans = homogenise(containment)
-        res['Homogenised'+'_T'] = ans['T']
-        res['Homogenised'+'_P'] = ans['P']
+        res['Homogenised'+'_T'] = float(ans['T'])
+        res['Homogenised'+'_P'] = float(ans['P'])
         data.append(res)
         
         a =time.time()
-        print("Proccessing",a-b)
+        #print("Proccessing",a-b)
 
     result = pd.DataFrame.from_dict(data)
     result.to_csv('result.csv')
