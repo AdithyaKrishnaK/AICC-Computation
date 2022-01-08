@@ -3,6 +3,7 @@ import pandas as pd
 import time
 from AICC import computeAICC, findEqT
 import pyromat as pm
+from tqdm import tqdm
 
 not_composition = ['P','V','T','ID']
 ignore_compartments = ['SCONTAIN','ENVIRON']
@@ -71,8 +72,7 @@ def create_space(listName,spaceID):
     new_obj = {'ID':spaceID}
     listName.append(new_obj)
 
-def parse(col,row):
-    containment = []
+def parse(containment,col,row):
     for i in range(len(col)):
         parameter = col[i]
         val = row[i]
@@ -93,14 +93,13 @@ def parse(col,row):
                 create_space(containment, space)
                 add_param(containment,space,"P",float(val))
     
-    return containment
 
 def add_temp(containment, path,time):
     file = open(path,'r')
     columns = file.readline().split()
     for line in file:
         vals = line.split()
-        if float(vals[0]) == time:
+        if vals[0] == time:
             for i in range(len(columns)):
                 if columns[i].startswith('T'):
                     col = columns[i]
@@ -111,10 +110,8 @@ def add_vol(containment, path):
     file = open(path,'r')
     for line in file:
         vals = line.split()
-        if vals[0].startswith('V'):
-            col = vals[0]
-            if search_by_id(containment,col[2:]):
-                add_param(containment,col[2:],"V",float(vals[1]))
+        if search_by_id(containment,vals[0]):
+            add_param(containment,vals[0],"V",float(vals[1]))
 
 
 def validate(containment):
@@ -146,22 +143,42 @@ def validate(containment):
 
     return flg
 
+def find_data_from_file(filepath,time):
+    file = open(filepath,'r')
+    columns = file.readline().split()
+    for line in file:
+        vals = line.split()
+        if vals[0] == time:
+            return [columns,vals]
+    
+    return False
+
 
 def process_data(CompPath,TempPath,VolPath):
-    file = open(CompPath,'r')
+    file = open(CompPath[0],'r')
     columns = file.readline().split()
     data = [] 
-    for line in file:
+
+    for line in tqdm(file):
         try:
             vals = line.split()
+            timestamp = vals[0]
             for i in range(len(vals)):
                 vals[i] = float(vals[i])
-            containment = parse(columns,vals)
-            add_temp(containment,TempPath,vals[0])
+            containment = []
+            parse(containment,columns,vals)
+            for filepath in CompPath:
+                if filepath != CompPath[0]:
+                    file_comp = find_data_from_file(filepath,timestamp)
+                    if file_comp:
+                        parse(containment,file_comp[0],file_comp[1])
+            
+            add_temp(containment,TempPath,timestamp)
             add_vol(containment,VolPath)
+
         except:
             print("Error in parsing data")
-        
+
         for space in containment:
             tot = 0
             for key in space.keys():
@@ -173,10 +190,8 @@ def process_data(CompPath,TempPath,VolPath):
                     space[key] /= tot
         
         if not validate(containment):
-            print(containment)
             print("Please verify the data")
             return
-        
         res = {"TIME":vals[0]}
         for space in containment:
             if space.get('ID').upper() not in ignore_compartments:

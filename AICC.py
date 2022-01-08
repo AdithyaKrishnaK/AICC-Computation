@@ -1,4 +1,5 @@
 from functools import partial
+from scipy import optimize
 import pyromat as pm
 
 not_composition = ["P", "V", "T", "ID"]
@@ -26,7 +27,9 @@ def uchange(r, p, t):
     return val
 
 
-def findEqT(fun, x0):
+# Manual implementations not used
+def findEqT(fun, xg):
+    x0 = xg
     epsilon = 0.01
     for i in range(100):
         x = x0 - fun(x0)*2*epsilon*x0/(fun(x0*(1+epsilon))-fun(x0*(1-epsilon)))
@@ -35,8 +38,20 @@ def findEqT(fun, x0):
         x0 = x
 
     if abs(fun(x)) > 0.001:
-        print("Error: No convergence")
-        return 0
+        a = xg
+        b = 5000
+        err = []
+        while abs((b - a) / b) > 0.00000001:
+            err.append(abs((b - a) / b))
+            c = (b + a) / 2
+            if fun(c) * fun(b) < 0:
+                a = c
+            else:
+                b = c
+        if abs(fun(c)) > 0.001:
+            print("Error: No convergence",c)
+            return 0
+        return c
     return x
   
 
@@ -91,6 +106,20 @@ def computeProd(r, data):
     return p
 
 
+def inbuiltsolver(fun,xg):
+    try:
+      sol = optimize.newton(fun,xg)
+    except:
+      try:
+        sol = optimize.brentq(fun,xg,6000)
+      except:
+        print("All hope is lost")
+        return 0
+    if abs(fun(sol)) > 0.001:
+        print("Error: Wrong convergence")
+        return 0
+    return sol
+
 def computeAICC(r, data={"F": 0.541, "x_c": 0.07, "x_o2": 0.05, "x_d": 0.55}):
 
     if r.get("H2") == None and r.get("D2") == None:
@@ -110,7 +139,7 @@ def computeAICC(r, data={"F": 0.541, "x_c": 0.07, "x_o2": 0.05, "x_d": 0.55}):
             n_p += p[key]
 
     fun = partial(uchange,r,p)
-    T = findEqT(fun, r['T'])
+    T = inbuiltsolver(fun, r['T'])
     P_AICC = n_p * R * T / r["V"]
     p["T"] = T
     p["P"] = P_AICC
