@@ -2,10 +2,11 @@ from functools import partial
 from scipy import optimize
 import pyromat as pm
 
+
 not_composition = ["P", "V", "T", "ID"]
 
 
-def uchange(r, p, t):
+def uchange(r, p, n_p, t):
     pm.config["unit_matter"] = "kmol"
     data = {}
     R = 8.314
@@ -23,37 +24,9 @@ def uchange(r, p, t):
 
     for key in p.keys():
         if key not in not_composition:
-            val += data[key].e(T=t) * p[key]
+            val += data[key].e(T=t) * p[key] * n_p
     return val
 
-
-# Manual implementations not used
-def findEqT(fun, xg):
-    x0 = xg
-    epsilon = 0.01
-    for i in range(100):
-        x = x0 - fun(x0)*2*epsilon*x0/(fun(x0*(1+epsilon))-fun(x0*(1-epsilon)))
-        if abs((x - x0) / x) < 0.00000001:
-            break
-        x0 = x
-
-    if abs(fun(x)) > 0.001:
-        a = xg
-        b = 5000
-        err = []
-        while abs((b - a) / b) > 0.00000001:
-            err.append(abs((b - a) / b))
-            c = (b + a) / 2
-            if fun(c) * fun(b) < 0:
-                a = c
-            else:
-                b = c
-        if abs(fun(c)) > 0.001:
-            print("Error: No convergence",c)
-            return 0
-        return c
-    return x
-  
 
 def computeProd(r, data):
     p = {}
@@ -68,6 +41,12 @@ def computeProd(r, data):
     if r.get("CO") == None:
         r["CO"] = 0
 
+    if r.get(h_key + "O") == None:
+        r[h_key + "O"] = 0
+
+    if r.get("CO2") == None:
+        r["CO2"] = 0
+
     x = r[h_key] + data["F"] * r["CO"]
 
     x_d = 0
@@ -81,65 +60,81 @@ def computeProd(r, data):
     if x >= data["x_c"] and r["O2"] >= data["x_o2"] and x_d <= data["x_d"]:
         if (r[h_key] + r["CO"]) / 2 > r["O2"]:
             k = 2 * r["O2"] / (r[h_key] + r["CO"])
-            p[h_key + "O"] = k * r[h_key] * n_r
-            p["CO2"] = k * r["CO"] * n_r
+            p[h_key + "O"] = r[h_key + "O"] * n_r + k * r[h_key] * n_r
+            p["CO2"] = r["CO2"] * n_r + k * r["CO"] * n_r
             p["CO"] = (r["CO"] - k * r["CO"]) * n_r
             p[h_key] = (r[h_key] - k * r[h_key]) * n_r
-            if p[h_key] < 0 or p["CO"] < 0:
-                print("Error")
+            if p[h_key] < 0:
+                print("Error: Concentration cannot be negative")
+                p[h_key] = 0
+            if p["CO"] < 0:
+                print("Error: Concentration cannot be negative")
+                p["CO"] = 0
             p["O2"] = 0
         else:
-            p[h_key + "O"] = r[h_key] * n_r
+            p[h_key + "O"] = r[h_key + "O"] * n_r + r[h_key] * n_r
             p[h_key] = 0
             p["CO"] = 0
-            p["CO2"] = r["CO"] * n_r
+            p["CO2"] = r["CO2"] * n_r + r["CO"] * n_r
             p["O2"] = (r["O2"] - (r[h_key] + r["CO"]) / 2) * n_r
     else:
-        for key in r.keys():
-            if key not in not_composition:
-                p[key] = n_r * r[key]
-        return p
+        return r
 
     for key in r.keys():
-        if key not in list(set().union(["H2", "D2", "O2", "D2O", "H2O", "CO", "CO2"], not_composition)):
+        if key not in list(
+            set().union(["H2", "D2", "O2", "D2O", "H2O", "CO", "CO2"], not_composition)
+        ):
             p[key] = n_r * r[key]
     return p
 
 
-def inbuiltsolver(fun,xg):
+def inbuiltsolver(fun, xg, x1):
     try:
-      sol = optimize.newton(fun,xg)
+        sol = optimize.newton(fun, xg, x1=x1)
     except:
-      try:
-        sol = optimize.brentq(fun,xg,6000)
-      except:
-        print("All hope is lost")
+        print("No convergence")
         return 0
-    if abs(fun(sol)) > 0.001:
+
+    if abs(fun(sol)) > 0.001 or sol < 273:
         print("Error: Wrong convergence")
         return 0
     return sol
 
+
 def computeAICC(r, data={"F": 0.541, "x_c": 0.07, "x_o2": 0.05, "x_d": 0.55}):
 
     if r.get("H2") == None and r.get("D2") == None:
-        print("No hydrogen or deutrium")
+        r["H2"] = 0
+
+    if r.get("H2") != None and r.get("D2") != None:
+        print("Error, both hydrogen and deutrium present. Not Supported")
         return r
-    
+
     if r.get("O2") == None:
-        print("No oxygen. no explosion")
+        print("No oxygen. No explosion")
         return r
 
     R = 8.314
     p = computeProd(r, data)
+
+    # No reaction
+    if p.get("T") != None:
+        return p
 
     n_p = 0
     for key in p.keys():
         if key not in not_composition:
             n_p += p[key]
 
-    fun = partial(uchange,r,p)
-    T = inbuiltsolver(fun, r['T'])
+    for key in p.keys():
+        if key not in not_composition:
+            p[key] /= n_p
+
+    xg = float(-uchange(r, p, n_p, r["T"]) / (2.5 * R * n_p) + r["T"])
+    if xg > 6000:
+        xg = 6000
+    fun = partial(uchange, r, p, n_p)
+    T = inbuiltsolver(fun, r["T"], xg)
     P_AICC = n_p * R * T / r["V"]
     p["T"] = T
     p["P"] = P_AICC
