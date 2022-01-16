@@ -38,13 +38,16 @@ for i in range(x.shape[0]):
         Z[i, j] = getP(X[i, j], Y[i, j])
 
 
-fig = plt.figure()
+# fig = plt.figure()
+fig, ax = plt.subplots(1, 1)
 
 # syntax for 3-D plotting
-ax = plt.axes(projection="3d")
-ax.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap="plasma", edgecolor="none")
+# ax = plt.axes(projection="3d")
+#ax.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap="plasma", edgecolor="none")
+CS = ax.contourf(X, Y, Z)
 ax.set_xlabel("H2")
 ax.set_ylabel("H2O")
-ax.set_zlabel("Pressure")
-
+#ax.set_zlabel("Pressure")
+cbar = fig.colorbar(CS)
+cbar.ax.set_ylabel('Pressure (bar)')
 plt.show()

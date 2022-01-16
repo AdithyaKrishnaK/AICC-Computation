@@ -27,17 +27,24 @@ def uchange(r, p, n_p, t):
             val += data[key].e(T=t) * p[key] * n_p
     return val
 
+#data contains
+# F - Scaling factor to find equivalent hydrogen for carbon monoxide
+# x_c - Minimum mole fraction of equivalent hydrogen
+# x_o2 - Minimum mole fraction of oxygen
+# x_d - Maximum mole fraction of dilutents
 
 def computeProd(r, data):
     p = {}
     R = 8.314
     n_r = r["P"] * r["V"] / (R * r["T"])
 
+    #Checking for hydrogen or deutrium
     if r.get("H2") != None:
         h_key = "H2"
     else:
         h_key = "D2"
 
+    # Setting values zero so that later on error is not raised
     if r.get("CO") == None:
         r["CO"] = 0
 
@@ -59,6 +66,7 @@ def computeProd(r, data):
 
     if x >= data["x_c"] and r["O2"] >= data["x_o2"] and x_d <= data["x_d"]:
         if (r[h_key] + r["CO"]) / 2 > r["O2"]:
+            # Oxygen limted - distribution according to proportion
             k = 2 * r["O2"] / (r[h_key] + r["CO"])
             p[h_key + "O"] = r[h_key + "O"] * n_r + k * r[h_key] * n_r
             p["CO2"] = r["CO2"] * n_r + k * r["CO"] * n_r
@@ -72,14 +80,17 @@ def computeProd(r, data):
                 p["CO"] = 0
             p["O2"] = 0
         else:
+            #excess oxygen
             p[h_key + "O"] = r[h_key + "O"] * n_r + r[h_key] * n_r
             p[h_key] = 0
             p["CO"] = 0
             p["CO2"] = r["CO2"] * n_r + r["CO"] * n_r
             p["O2"] = (r["O2"] - (r[h_key] + r["CO"]) / 2) * n_r
     else:
+        # No explosion
         return r
 
+    # No changes to non reacting species
     for key in r.keys():
         if key not in list(
             set().union(["H2", "D2", "O2", "D2O", "H2O", "CO", "CO2"], not_composition)
@@ -100,7 +111,11 @@ def inbuiltsolver(fun, xg, x1):
         return 0
     return sol
 
-
+#data contains
+# F - Scaling factor to find equivalent hydrogen for carbon monoxide
+# x_c - Minimum mole fraction of equivalent hydrogen
+# x_o2 - Minimum mole fraction of oxygen
+# x_d - Maximum mole fraction of dilutents
 def computeAICC(r, data={"F": 0.541, "x_c": 0.07, "x_o2": 0.05, "x_d": 0.55}):
 
     if r.get("H2") == None and r.get("D2") == None:
@@ -126,13 +141,16 @@ def computeAICC(r, data={"F": 0.541, "x_c": 0.07, "x_o2": 0.05, "x_d": 0.55}):
         if key not in not_composition:
             n_p += p[key]
 
+    # Converting product composition to mole fraction
     for key in p.keys():
         if key not in not_composition:
             p[key] /= n_p
 
+    # Second guess for Newton-Raphson method
     xg = float(-uchange(r, p, n_p, r["T"]) / (2.5 * R * n_p) + r["T"])
     if xg > 6000:
         xg = 6000
+
     fun = partial(uchange, r, p, n_p)
     T = inbuiltsolver(fun, r["T"], xg)
     P_AICC = n_p * R * T / r["V"]

@@ -2,6 +2,11 @@ from math import exp, pow
 
 not_composition = ["P", "V", "T", "ID"]
 
+#data contains
+# F - Scaling factor to find equivalent hydrogen for carbon monoxide
+# x_c - Minimum mole fraction of equivalent hydrogen
+# x_o2 - Minimum mole fraction of oxygen
+# x_d - Maximum mole fraction of dilutents
 
 def flame(r, data={"F": 0.541, "x_c": 0.07, "x_o2": 0.05, "x_d": 0.55}):
     R = 8.314
@@ -74,6 +79,6 @@ def flame(r, data={"F": 0.541, "x_c": 0.07, "x_o2": 0.05, "x_d": 0.55}):
     rate["CO2"] = -rate["CO"]
     # Enthalpy of combustion
     q_h2 = 285.8  # KJ/mol
-    q_co = 283.0  # kJ/mol
+    q_co = 283.24  # kJ/mol
     energy = -(q_h2 * rate["H2"] + q_co * rate["CO"])
     return [rate, energy]
